@@ -1,5 +1,7 @@
 # Merger_Ringdown_Test
-This repository contains the codes uded for the paper [arXiv number to be added].
+This repository contains the codes uded for the paper
+
+[__arXiv link to be added after submission__].
 
 The main codes are contained in the [Modules](Modules/) folder:
 - [Ringdown2.py](Modules/Ringdown2.py): contains the routines to generate ringdown waveforms and compute their signal-to-noise ratio w.r.t. a noise curve;
