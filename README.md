@@ -1,5 +1,5 @@
 # Merger_Ringdown_Test
-This repository contains the codes uded for the paper
+This repository contains the codes used for the paper
 
 [__arXiv link to be added after submission__].
 
