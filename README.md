@@ -14,6 +14,6 @@ Here below you find a flowchart of the three neural network units composing the 
 
 <img src="./cvae_architecture.jpg" width="650" height="650" />
 
-The three units are used into the training and production as illustrated in the diagram below
+The three units are used into the training and production as illustrated in the fig.1 of the paper (also repeated here below for the reader's convenience)
 
 <img src="./cvae_fig.jpg" width="650" height="500" />
