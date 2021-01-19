@@ -10,4 +10,4 @@ The main codes are contained in the [Modules](Modules/) folder:
 
 The notebook [cvae_notebook_git.ipynb](cvae_notebook_git.ipynb) is organized in sections, each section performing a different task: generate datasets, produce plots, test the network, etc. The notebook was originally run on the `Google Colab` platform.
 
-![](./cvae_architecture.jpg =1x1)
+<img src="./cvae_architecture.jpg" width="650" height="650" />
