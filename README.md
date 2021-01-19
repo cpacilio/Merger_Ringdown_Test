@@ -1,4 +1,8 @@
 # Merger_Ringdown_Test
+## Authors
+- Swetha Bhagwat (infn.swethabhagwat@gmail.com)
+- Costantino Pacilio (costantinopacilio1990@gmail.com)
+## Contents
 This repository contains the codes used for the paper
 
 [__arXiv link to be added after submission__].
