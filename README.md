@@ -1,7 +1,9 @@
 # Merger_Ringdown_Test
 This repository contains the codes used for the paper
+
 [__arXiv link to be added after submission__].
-The paper can be cited as
+
+Please cite the paper as
 
 ## Authors
 - Swetha Bhagwat (infn.swethabhagwat@gmail.com)
