@@ -10,6 +10,10 @@ The main codes are contained in the [Modules](Modules/) folder:
 
 The notebook [cvae_notebook_git.ipynb](cvae_notebook_git.ipynb) is organized in sections, each section performing a different task: generate datasets, produce plots, test the network, etc. The notebook was originally run on the `Google Colab` platform.
 
-Here below you find a flowchart of the three neural network units composing the conditional variational autoencoder. The arguments of the functions `Conv1d`, `MaxPool1d`, `GroupNorm` and `Linear` refer to the [PyTorch.nn](https://pytorch.org/docs/stable/nn.html) documentation.
+Here below you find a flowchart of the three neural network units composing the conditional variational autoencoder. The arguments of the functions `Conv1d`, `MaxPool1d`, `GroupNorm` and `Linear` refer to the [PyTorch.nn](https://pytorch.org/docs/stable/nn.html) official documentation.
 
 <img src="./cvae_architecture.jpg" width="650" height="650" />
+
+The three units are used into the training and production as illustrated in the diagram below
+
+<img src="./cvae_fig.jpg" width="650" height="500" />
