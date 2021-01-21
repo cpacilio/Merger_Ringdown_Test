@@ -1,10 +1,18 @@
 # Merger_Ringdown_Test
-This repository contains the codes used for the paper
-
-[__arXiv link to be added after submission__].
+This repository contains the codes used for the paper ![arXiv:2101.07817](https://arxiv.org/abs/2101.07817).
 
 Please cite the paper as
-
+```
+@article{1842048,
+    author = "Bhagwat, Swetha and Pacilio, Costantino",
+    title = "{Merger-Ringdown Consistency: A New Test of Strong Gravity using Deep Learning}",
+    eprint = "2101.07817",
+    archivePrefix = "arXiv",
+    primaryClass = "gr-qc",
+    month = "1",
+    year = "2021"
+}
+```
 ## Authors
 - Swetha Bhagwat (infn.swethabhagwat@gmail.com)
 - Costantino Pacilio (costantinopacilio1990@gmail.com)
