@@ -1,5 +1,5 @@
 # Merger_Ringdown_Test
-This repository contains the codes used for the paper ![arXiv:2101.07817](https://arxiv.org/abs/2101.07817).
+This repository contains the codes used for the paper [arXiv:2101.07817](https://arxiv.org/abs/2101.07817).
 
 Please cite the paper as
 ```
