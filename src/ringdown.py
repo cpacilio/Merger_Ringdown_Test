@@ -1,15 +1,14 @@
+import sys
+import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import os
-from importlib.machinery import SourceFileLoader
+#from importlib.machinery import SourceFileLoader
 from scipy.interpolate import interp1d
 
 ## import modules
 from os.path import join, realpath, dirname
-full_path = realpath(__file__)
-dir_path = dirname(full_path)
-harmonics = SourceFileLoader('harmonics',join(dir_path,'harmonics.py')).load_module()
+dir_path = dirname(realpath(__file__))
+sys.path.append(os.path.abspath(dir_path))
 from harmonics import sYlm
 
 ## constants
@@ -32,7 +31,7 @@ qnm_interp_dict = {}
 qnm_data_dict = {(2,2):'n1l2m2.dat',(2,1):'n1l2m1.dat',(3,3):'n1l3m3.dat',(4,4):'n1l4m4.dat'}
 
 def interp_qnm(mode):
-  df = pd.read_csv(join(dir_path,qnm_data_dict[mode]),sep=' ',\
+  df = pd.read_csv(join(dir_path,'qnm_tables/'+qnm_data_dict[mode]),sep=' ',\
     engine='python',names=['spin','omegaR','omegaIm','arg1','arg2'])
   x, y1, y2 = np.array(df['spin']), np.array(df['omegaR']), np.array(-df['omegaIm'])
   outR, outI = interp1d(x,y1,'cubic'), interp1d(x,y2,'cubic')

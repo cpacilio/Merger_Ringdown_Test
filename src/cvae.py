@@ -6,64 +6,106 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
-
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import TensorDataset, DataLoader, random_split
 
-from sklearn.base import BaseEstimator,TransformerMixin
+## function to standardize the dataset
+def standardize(X):
+  max = torch.max(X,dim=1)[0].view(-1,1)
+  mu = torch.mean(X/max,1).view(-1,1)
+  std = torch.std(X/max,1).view(-1,1)
+  return (X/max-mu)/std
 
-#from scipy.stats import kstest
-
-DEVICE = 'cuda'
-
-
-## class to standardize the dataset
-## note: the inheritances are essential to call fit_transform method
-class Standardizer(BaseEstimator,TransformerMixin):
-  def __init__(self):
-    return None
-
-  def fit(self,X,y=None):
-    self.max = torch.max(X,dim=1)[0].view(-1,1)
-    self.mu = torch.mean(X/self.max,1).view(-1,1)
-    self.loc = torch.std(X/self.max,1).view(-1,1)
-    return self
-  
-  def transform(self,X,y=None):
-    out = (X/self.max-self.mu)/self.loc
-    return out
-    
 
 ## class to manage the datasets
 class GWDataset():
-  def __init__(self,X,y,z=None):
-    self.x0 = X
-    self.x = deepcopy(self.x0)
+  def __init__(self,X,y,snr=None):
+    self.x = X
     self.y = y
-    if z is not None:
-      self.snr = z
-    
-  def reset(self):
-    self.x = deepcopy(self.x0)
-    return self
+    if snr is not None:
+      self.snr = snr
     
   def __len__(self):
-    return len(self.x0)
+    return len(self.x)
     
   def __getitem__(self,idx):
     return self.x[idx], self.y[idx]
   
-  def add_noise(self,noises,SNR=None):
-    if SNR is not None:
-      A = SNR/self.snr
-      self.x *= A.reshape(-1,1)
-    self.x += noises
-    return self
+  def add_noise(self,noises,snr=None):
+    if snr is not None:
+      A = snr/self.snr
+      out = self.x*A.reshape(-1,1)
+      out += noises
+    else:
+      out = self.x + noises
+    return out
+
+
+AFFINE = True
+## Fully connected neural network for the cvae
+class Encoder_MLP(nn.Module):
+  def __init__(self,din,dlin,dout,cat=None):
+    super(Encoder_MLP,self).__init__()
+    self.cat = cat
+    self.dout = dout
+    ## make layers
+    self.lin = self.make_lin_layers(din,dlin)
+    self.z1 = nn.Linear(dlin[-1],dout)
+    self.z2 = nn.Linear(dlin[-1],dout)
+    
+  def forward(self,X,c=None):
+    x = deepcopy(X)
+    if self.cat:
+      x = torch.cat((x,c),dim=-1)
+    x = self.lin(x)
+    mu, logvar = self.z1(x), self.z2(x)
+    return mu, logvar
+    
+  def make_lin_layers(self,din,dlin):
+    lin = []
+    if self.cat:
+      din += self.cat
+    for k in dlin:
+      lin.append(nn.Linear(din,k))
+      #lin.append(nn.GroupNorm(1,k,affine=AFFINE))
+      lin.append(nn.ReLU())
+      din = k
+    return nn.Sequential(*lin)
     
 
-## Convolutional neural network for the cvae
-AFFINE = True
+class CVAE_MLP(nn.Module):
+  def __init__(self,din,dlin,zdim,dout):
+    super(CVAE_MLP,self).__init__()
+    self.input_dim = din
+    self.output_dim = dout
+    self.latent_dim = zdim
+    self.encoder = Encoder_MLP(din,dlin,zdim)
+    self.guide = Encoder_MLP(din,dlin,zdim,cat=dout)
+    self.decoder = Encoder_MLP(din,dlin,dout,cat=zdim)
+    
+  def forward(self,data,target):
+    mu0, logvar0 = self.guide(data,target)
+    mu1, logvar1 = self.encoder(data)
+    z = self.reparametrize(mu0,logvar0)
+    mu2, logvar2 = self.decoder(data,z)
+    return mu0,logvar0,mu1,logvar1,mu2,logvar2
+ 
+  def reparametrize(self,mu,logvar):
+    sigma = torch.exp(0.5*logvar)
+    eps = torch.randn_like(sigma)
+    z = mu + eps*sigma
+    return z
+  
+  def sample(self,data):
+    mu1, logvar1 = self.encoder(data)
+    sigma1 = torch.exp(0.5*logvar1)
+    z = torch.normal(mu1,sigma1).to(DEVICE)
+    mu2, logvar2 = self.decoder(data,z)
+    sigma2 = torch.exp(0.5*logvar2)
+    out = torch.normal(mu2,logvar2).to(DEVICE)
+    return out
 
+## Convolutional neural network for the cvae
 class Encoder(nn.Module):
   def __init__(self,din,nkernel,ksize,dpool,dlin,dout,cat=None):
     super(Encoder,self).__init__()
@@ -98,6 +140,7 @@ class Encoder(nn.Module):
       conv.append(nn.Conv1d(cin,nkernel[i],ksize[i]))
       conv.append(nn.MaxPool1d(dpool[i]))
       conv.append(nn.GroupNorm(1,nkernel[i],affine=AFFINE))
+      #conv.append(nn.GroupNorm(nkernel[i],nkernel[i],affine=AFFINE))
       conv.append(nn.ReLU())
       cin = nkernel[i]
     return nn.Sequential(*conv)
@@ -141,19 +184,20 @@ class CVAE(nn.Module):
   def sample(self,data):
     mu1, logvar1 = self.encoder(data)
     sigma1 = torch.exp(0.5*logvar1)
-    z = torch.normal(mu1,sigma1).to(DEVICE)
+    z = torch.normal(mu1,sigma1).to(self.device)
     mu2, logvar2 = self.decoder(data,z)
     sigma2 = torch.exp(0.5*logvar2)
-    out = torch.normal(mu2,logvar2).to(DEVICE)
+    out = torch.normal(mu2,logvar2).to(self.device)
     return out
     
     
 ## bayesian regressor class
-def ELBO(target,mu0,logvar0,mu1,logvar1,mu2,logvar2):
+def ELBO_loss(target,mu0,logvar0,mu1,logvar1,mu2,logvar2):
   L = 0.5*torch.sum(1.8378770664093453+logvar2+(mu2-target)**2/torch.exp(logvar2))
   KL = -0.5*torch.sum(1+(logvar0-logvar1)-(mu0-mu1)**2/torch.exp(logvar1)-torch.exp(logvar0-logvar1))
   return L/len(target), KL/len(target)
-  
+
+## annealing policy
 def annealing(step,betas):
   step += 1
   if step >= len(betas):
@@ -161,22 +205,23 @@ def annealing(step,betas):
   else:
     return betas[step], step
 
-class Regressor_Bayes():
-  default_dict = {'epochs':100,'batch_size':512,'criterion':ELBO,\
-                  'optim':optim.Adam,'lr':1e-4,'annealing':None,\
-                  'early_stop':True,'tol':1e-2,'n_iter_no_change':5,\
-                  'validation':0.2,'lr_decay':False,'lr_step':100}
+## bayesian regressor
+class Bayesian_Regressor():
+  
+  default_dict = {'epochs':100,'batch_size':512,'criterion':ELBO_loss,\
+    'optim_function':optim.Adam,'lr':1e-4,\
+    'lr_decay':False,'lr_step':100,'annealing':None,\
+    'early_stop':True,'tol':1e-2,'n_iter_no_change':5,\
+    'validation':0.2,'device':'cuda'}
 
   def __init__(self,net,**kwargs):
     self.__dict__ = {**self.default_dict,**kwargs}
     self.net = net
-    self.sc = Standardizer()
     self.ynorms = 1.
     
-  def prepare_data_loaders(self,dataset):
-    data, target = dataset.x, dataset.y/self.ynorms
-    data = torch.from_numpy(data).float().to(DEVICE)
-    target = torch.from_numpy(target).float().to(DEVICE)
+  def prepare_data_loaders(self,data,target):
+    data = torch.from_numpy(data).float().to(self.device)
+    target = torch.from_numpy(target).float().to(self.device)
     trainset = TensorDataset(data,target)
     valid_len = int(self.validation*len(trainset))
     train_len = len(trainset) - valid_len
@@ -185,20 +230,22 @@ class Regressor_Bayes():
     valid_loader = DataLoader(validset,batch_size=self.batch_size,shuffle=True)
     return train_loader, valid_loader
     
-  def fit(self,dataset,noises=None,SNR=None):
-    ## set optimizer
-    optimizer = self.optim(self.net.parameters(),lr=self.lr)
+  def fit(self,dataset,noises=None,snr=None):
+    ## set optimizer and lr scheduler
+    optimizer = self.optim_function(self.net.parameters(),lr=self.lr)
     if self.lr_decay:
       self.scheduler = StepLR(optimizer,step_size=self.lr_step,gamma=0.5)
     
     if noises is not None:
-      noise = torch.from_numpy(noises).float().to(DEVICE)
-    if SNR is not None:
-      dataset.x /= dataset.snr.reshape(-1,1)
-      SNR = torch.from_numpy(SNR).float().to(DEVICE)
+      noise = torch.from_numpy(noises).float().to(self.device)
+    if snr is not None:
+      X = dataset.x/dataset.snr.reshape(-1,1)
+      snr = torch.from_numpy(snr).float().to(self.device)
       
     ## prepare data
-    train_loader, valid_loader = self.prepare_data_loaders(dataset)
+    y = dataset.y/self.ynorms
+    train_loader, valid_loader = self.prepare_data_loaders(X,y)
+    valid_loss_min = -np.inf
     
     ## init useful variables
     losses = {}
@@ -210,6 +257,7 @@ class Regressor_Bayes():
     losses['valid_KL'] = []
     
     epochs_no_improve = 0
+    ## set beta for annealing
     if self.annealing is not None:
       beta = 0
       beta_step = 0
@@ -229,15 +277,15 @@ class Regressor_Bayes():
           idx = torch.randperm(noise.size()[0])[:len(data)]
           nn = noise[idx]
           A = 1.
-          if SNR is not None:
-            idx = torch.randperm(SNR.size()[0])[:len(data)]
-            A = SNR[idx]
+          if snr is not None:
+            idx = torch.randperm(snr.size()[0])[:len(data)]
+            A = snr[idx]
             A = A.view(-1,1)
           input = data*A + nn
         else:
           input = data
         ## standardize
-        input = self.sc.fit_transform(input)
+        input = standardize(input)
         ## backprop
         optimizer.zero_grad()
         output = self.net(input,target)
@@ -265,15 +313,15 @@ class Regressor_Bayes():
             idx = torch.randperm(noise.size()[0])[:len(data)]
             nn = noise[idx]
             A = 1.
-            if SNR is not None:
-              idx = torch.randperm(SNR.size()[0])[:len(data)]
-              A = SNR[idx]
+            if snr is not None:
+              idx = torch.randperm(snr.size()[0])[:len(data)]
+              A = snr[idx]
               A = A.view(-1,1)
             input = data*A + nn         
           else:
             input = data
           ## standardize
-          input = self.sc.fit_transform(input)
+          input = standardize(input)
           ## compute loss
           output = self.net(input,target)
           L, KL = self.criterion(target,*output)
@@ -286,11 +334,6 @@ class Regressor_Bayes():
       losses['valid_L'].append(valid_loss_L)
       losses['valid_KL'].append(valid_loss_KL)
       
-      ## step necessary for early stop
-      if epoch == 0:
-        valid_loss_min = valid_loss
-        checkpoint = self.net.state_dict()
-      
       ## LR scheduler
       if self.lr_decay:
         self.scheduler.step()
@@ -300,29 +343,27 @@ class Regressor_Bayes():
         beta, beta_step = annealing(beta_step,self.annealing)
 
       ## early stop criterion
-      if self.early_stop and epoch!=0 and epoch%20==0:
-        if valid_loss + self.tol < valid_loss_min:
+      if self.early_stop and epoch%20==0:
+        if (valid_loss/valid_loss_min-1)< -self.tol:
           epochs_no_improve = 0
           valid_loss_min = valid_loss
           checkpoint = self.net.state_dict()
         else:
-          epochs_no_improve += 1
-        
+          epochs_no_improve += 1        
         if epochs_no_improve >= self.n_iter_no_change:
           self.net.load_state_dict(checkpoint)
           break
     
-    dataset = dataset.reset()
     return losses
     
   def predict(self,X):
-    x = deepcopy(X)
-    x = torch.from_numpy(x).float().to(DEVICE)
-    x = self.sc.fit_transform(x)
+    #x = deepcopy(X)
+    x = torch.from_numpy(X).float().to(self.device)
+    x = standardize(x)
     with torch.no_grad():
       self.net.eval()
       out = self.net.sample(x)
-      if DEVICE == 'cuda':
+      if self.device == 'cuda':
         out = out.cpu().numpy()
       else:
         out = out.numpy()
@@ -331,6 +372,7 @@ class Regressor_Bayes():
   def sample(self,X,N=1000):
     dim = (len(X),self.net.output_dim,N)
     samples = np.zeros(dim)
+    self.net.device = self.device
     for i in range(N):
       samples[:,:,i] = self.predict(X)
     return samples
@@ -345,19 +387,18 @@ class Regressor_Bayes():
   def score(self,samples,ytrue):
     ## returns the KS statistics
     CL = np.linspace(0,1,100) 
-    _, KS = PP_plot_median(samples,ytrue,CL)
+    _, KS = PP_plot(samples,ytrue,CL)
     return KS
    
-  def load(self,load_path,map_location=DEVICE):
-    checkpoint = torch.load(load_path,map_location=map_location)
+  def load(self,load_path):
+    checkpoint = torch.load(load_path,map_location=self.device)
     self.net.load_state_dict(checkpoint['state_dict'])
     self.ynorms = checkpoint['ynorms']
     return None
     
-    
 ## evaluation functions    
 
-def PP_plot_median(samples,target,CL):
+def PP_plot(samples,target,CL):
   sorted_samples = np.sort(samples,axis=-1)
   scores = np.zeros((target.shape[1],len(CL)))
   L = samples.shape[-1]
@@ -368,11 +409,10 @@ def PP_plot_median(samples,target,CL):
     condition1 = target >= sorted_samples[:,:,a]
     condition2 = target <= sorted_samples[:,:,b]
     scores[:,i] = np.mean(condition1*condition2,axis=0)
-  KS = np.max(np.abs(scores-\
-   np.repeat(CL.reshape(1,-1),3,axis=0)),axis=1)
+  KS = np.max(np.abs(scores-np.repeat(CL.reshape(1,-1),3,axis=0)),axis=1)
   return scores, KS
   
-def PP_plot_tail(samples,target,CL):
+def PP_plot_from_tail(samples,target,CL):
   sorted_samples = np.sort(samples,axis=-1)
   scores = np.zeros((target.shape[1],len(CL)))
   L = samples.shape[-1]
@@ -381,6 +421,5 @@ def PP_plot_tail(samples,target,CL):
     a = max(0,int(L*p)-1)
     condition = target <= sorted_samples[:,:,a]
     scores[:,i] = np.mean(condition,axis=0)
-  KS = np.max(np.abs(scores-\
-   np.repeat(CL.reshape(1,-1),3,axis=0)),axis=1)
+  KS = np.max(np.abs(scores-np.repeat(CL.reshape(1,-1),3,axis=0)),axis=1)
   return scores, KS
