@@ -1,6 +1,10 @@
 # Merger_Ringdown_Test
 This repository contains the codes used for the paper [arXiv:2101.07817](https://arxiv.org/abs/2101.07817).
 
+To clone the repository type 
+
+`git clone -branch main https://github.com/cpacilio/Merger_Ringdown_Test.git`
+
 Please cite the paper as
 ```
 @article{1842048,
